@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Sun Nov 18 12:06:09 2018
 
@@ -40,8 +38,8 @@ IM_DIM = 28 # number of pixels along x and y (square assumed) # mnist: 28
 output_dim = IM_DIM*IM_DIM # Number of pixels (mnist: 28*28*1) 
 N_LABELS = 10
 restore_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/results/" + EXPERIMENT + "/model.ckpt" # desktop path
-# samples_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/" + EXPERIMENT + "/samples/" # desktop path
 log_dir = "/tmp/tensorflow_mnist" # the path of tensorflow's log
+
 # Start tensorboard in the current folder:   tensorboard --logdir=logdir
 # Open 'Webbrowser at http://localhost:6006/
  
@@ -62,7 +60,7 @@ def print_current_model_settings(locals_):    # prints the chosen parameter
     
 # ---------------- network parts ----------------------------------------
 
-def Encoder(inputs):   # todo: batchnorm after inputs and after first two conv layers? one layer less?
+def Encoder(inputs): 
     inputs = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
     out = lays.conv2d(inputs, DIM, kernel_size = 5, stride = 2, # DIM = 64
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.1',
@@ -70,7 +68,7 @@ def Encoder(inputs):   # todo: batchnorm after inputs and after first two conv l
     out = lays.conv2d(out, 2*DIM, kernel_size = 5, stride = 2, #2*DIM = 128
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.2',
         weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE)
-    out = lays.conv2d(out, 4*DIM, kernel_size = 5, stride = 2, # needed? 4*DIM = 256
+    out = lays.conv2d(out, 4*DIM, kernel_size = 5, stride = 2, # 4*DIM = 256
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.3',
         weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE)
     out = tf.reshape(out, [-1, 4*4*4*DIM]) # adjust
@@ -92,7 +90,6 @@ def Generator(n_samples, conditions=None, mean=None, variance=None, noise=None):
         noise = tf.random_normal([n_samples, NOISE_DIM], mean= 0.0, stddev = 1.0) 
     if ((MODE == 'enc' or MODE == 'vae') and mean != None and variance != None): # input: mean and var
         inputs = sample_z([n_samples, Z_DIM], mean, variance)
-        # inputs = tf.concat([noise, code], 1)  # concat to: (BATCH_SIZE, NOISE_DIM+Z_DIM) # dont add noise
     elif (MODE == 'cond' or MODE == 'cond_ordered'):       # input: labels
         labels = tf.one_hot(tf.cast(conditions, tf.uint8), 10) # [BATCH_SIZE, 10]
         inputs = tf.concat([noise, labels], 1) #to: (BATCH_SIZE, NOISE_DIM+10) 
@@ -198,29 +195,23 @@ if(MODE != 'vae'):
         gradients = tf.gradients(Discriminator(interpolates), [interpolates])[0] 
     else:
         gradients = tf.gradients(Discriminator(interpolates, conditions=condition_data), [interpolates])[0]
-        #D_prob_sum_ip = tf.summary.histogram("D_prob_ip", gradients) # do in steps, its not gradients
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
     gradient_penalty = tf.reduce_mean((slopes-1.)**2)
     disc_cost += LAMBDA*gradient_penalty
 
     loss_sum_gp = tf.summary.scalar("D_loss_gp", disc_cost)
 
-    merged_summary_op_d = tf.summary.merge([loss_sum, loss_sum_gp, D_prob_sum]) #, D_pro_sum_interpolated])
+    merged_summary_op_d = tf.summary.merge([loss_sum, loss_sum_gp, D_prob_sum])
     merged_summary_op_g = tf.summary.merge([G_loss_sum, G_prob_sum, G_image])
 else:
     # Standard VAE loss
     ## reconstruction loss: pixel-wise L2 loss = mean(square(gen_image - real_im)) # E[log P(X|z)]
-    img_loss = tf.reduce_sum(tf.squared_difference(fake_data, real_data), 1)   # axis=[1,2,3] # has to be sum, not mean!
+    img_loss = tf.reduce_sum(tf.squared_difference(fake_data, real_data), 1)   # has to be sum, not mean!
     mean_img_loss = tf.reduce_mean(img_loss)
-    ## or binary cross entropy (assuming 0...1 values)
-    # recon = tf.reduce_sum(tf.binary_crossentropy(fake_data, real_data), 1)
     ## latent loss = KL(latent code, unit gaussian) # D_KL(Q(z|X) || P(z|X)); calculate in closed form as both dist. are Gaussian
-    latent_loss = -0.5 * tf.reduce_mean(1. + variance_data - tf.square(mean_data) - tf.exp(variance_data), 1) # log_sigma inst of var_data, negative # better mean than sum
-    #latent_loss = 0.5 * tf.reduce_sum(tf.square(mean_data) + tf.square(variance_data) - tf.log(tf.square(variance_data)) - 1, 1)  # working as well
+    latent_loss = -0.5 * tf.reduce_mean(1. + variance_data - tf.square(mean_data) - tf.exp(variance_data), 1) # better mean than sum
     mean_latent_loss = tf.reduce_mean(latent_loss)
     vae_loss = tf.reduce_mean(img_loss + latent_loss)  
-    #img_loss_sum = tf.summary.hist("img_loss", img_loss) # batch.. only hist possible
-    #latent_loss_sum = tf.summary.hist("latent_loss", latent_loss) # batch.. only hist possible
     img_loss_sum = tf.summary.scalar("img_loss", mean_img_loss)
     latent_loss_sum = tf.summary.scalar("latent_loss", mean_latent_loss)
     vae_loss_sum = tf.summary.scalar("VAE_loss", vae_loss)
@@ -350,7 +341,7 @@ def generate_image(frame, final): # generates a batch of samples next to each ot
         else:
             _fixed_labels = np.zeros((sorted_labels.size, N_LABELS))
             _fixed_labels[np.arange(sorted_labels.size), sorted_labels] = 1 # np to one-hot
-        accu = session.run(accuracy, feed_dict={x: samples, y: _fixed_labels}) # pred_labels, ce_loss = y, cross_entropy
+        accu = session.run(accuracy, feed_dict={x: samples, y: _fixed_labels}) 
         print('Accuracy at step %d: %s' % (iteration, accu))     
 
 # -------------------------------- Train loop ---------------------------------------------
@@ -461,17 +452,3 @@ avg_time_per_iteration = overall_time/ITERS
 print('average time per iteration: ', avg_time_per_iteration, 'sec')
 overall_time /= 60.
 print("From ", START_ITER, "to ", ITERS," the GAN took ", overall_time, "min to run")
-
-
-# ----------------- test: generate from saved model --------------------------------------------------------------
-def test():
-    with tf.Session() as sess:
-        sess.run(init_op)
-        saver.restore(sess, restore_path)
-        print("Model restored.")
-        plotter.restore(START_ITER)  # makes plots start from 0
-        generate_image(iteration, True)
-        # output = sess.run(fake_data, feed_dict={condition_data: fixed_labels_array})
-        # imsaver.save_images(output.reshape((BATCH_SIZE, IM_DIM, IM_DIM)), 'test_samples_{}.jpg'.format(frame))   # sample_dir
-        print("Test finish!")
-

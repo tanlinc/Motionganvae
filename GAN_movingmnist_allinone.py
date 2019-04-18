@@ -1,11 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Sun Nov 18 12:06:09 2018
-
 @author: linkermann
-
-improved Wasserstein GAN simplified
 """
 import os, sys
 sys.path.append(os.getcwd())
@@ -39,8 +33,8 @@ ITERS = 10000 # How many generator iterations to train for
 START_ITER = 0  # Default 0 (start new learning), set accordingly if restoring from checkpoint (100, 200, ...)
 
 restore_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/results/" + EXPERIMENT + "/model.ckpt" # desktop path
-# samples_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/" + EXPERIMENT + "/samples/" # desktop path
 log_dir = "/tmp/tensorflow_movingmnist" # the path of tensorflow's log
+
 # Start tensorboard in the current folder:   tensorboard --logdir=logdir
 # Open 'Webbrowser at http://localhost:6006/
  
@@ -61,7 +55,7 @@ def print_current_model_settings(locals_):    # prints the chosen parameter
     
 # ---------------- network parts ----------------------------------------
 
-def Encoder(inputs):   # 32x32 ! todo: batchnorm after inputs and after first two conv layers?
+def Encoder(inputs):   # 32x32 !
     inputs = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
     out = lays.conv2d(inputs, DIM, kernel_size = 5, stride = 2, # DIM = 64
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.1',
@@ -72,9 +66,6 @@ def Encoder(inputs):   # 32x32 ! todo: batchnorm after inputs and after first tw
     out = lays.conv2d(out, 4*DIM, kernel_size = 5, stride = 2, # 4*DIM = 256
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.3',
         weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE)
-    #out = lays.conv2d(out, 8*DIM, kernel_size = 5, stride = 2, # new layer 8*DIM
-    #    data_format='NCHW', activation_fn=tf.nn.leaky_relu, scope='Enc.4',
-    #    weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE)
     out = tf.reshape(out, [-1, 4*4*4*DIM]) # adjust
     mean = lays.fully_connected(out, Z_DIM, activation_fn=None, scope='Enc.Mean',
         weights_initializer=tf.initializers.glorot_uniform(), reuse=tf.AUTO_REUSE)
@@ -91,11 +82,8 @@ def Generator(n_samples, conditions=None, mean=None, variance=None, noise=None):
     if (MODE == 'cond'):       # input: last frame 
         if noise is None:          # sample from Gaussian        
             noise = tf.random_normal([BATCH_SIZE, NOISE_DIM], mean= 0.0, stddev = 1.0)
-        #noise = tf.reshape(noise, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-        #frames = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
         inputs = tf.concat([noise, conditions], 1) # to: (BATCH_SIZE, 60 + 64*64) 
-        #inputs = tf.reshape(inputs, [BATCH_SIZE, 2*output_dim])
-    else: # plain
+    else: # plain gan
         if noise is None:
             noise = tf.random_normal([n_samples, NOISE_DIM], mean= 0.0, stddev = 1.0) 
         inputs = noise       # (BATCH_SIZE, NOISE_DIM) 
@@ -161,7 +149,7 @@ def Discriminator(inputs, conditions=None):
     return tf.reshape(out, [-1])
 
 def Discriminator_32(inputs, conditions=None):
-    # aae: input: last frame [BATCH_SIZE, output_dim] 
+    # input: last frame [BATCH_SIZE, output_dim] 
     ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
     conds = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
     ins = tf.concat([ins, conds], 1) # to: (BATCH_SIZE, 2, IM_DIM, IM_DIM) 
@@ -202,16 +190,13 @@ elif(MODE == 'cond'):
 elif(MODE == 'vae'):
     mean_data, variance_data = Encoder(real_data)
     fake_data = Generator_32(BATCH_SIZE, mean=mean_data, variance=variance_data)
-else:  # plain
+else:  # plain gan
     fake_data = Generator(BATCH_SIZE)
     disc_real = Discriminator(real_data)
     disc_fake = Discriminator(fake_data)
 
 fake_image = tf.reshape(fake_data, [BATCH_SIZE, IM_DIM, IM_DIM, 1])
 G_image = tf.summary.image("G_out", fake_image)
-#if(MODE != 'vae'):
-    #D_prob_sum = tf.summary.histogram("D_prob", disc_real)
-    #G_prob_sum = tf.summary.histogram("G_prob", disc_fake)
 
 # ------------------- make it a WGAN-GP: loss function and training ops --------------------------------------------
     
@@ -232,25 +217,23 @@ if(MODE != 'vae'):
         gradients = tf.gradients(Discriminator_32(interpolates, conditions=condition_data), [interpolates])[0]
     else:
         gradients = tf.gradients(Discriminator(interpolates, conditions=condition_data), [interpolates])[0]
-        #D_prob_sum_ip = tf.summary.histogram("D_prob_ip", gradients) # do in steps, its not gradients
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
     gradient_penalty = tf.reduce_mean((slopes-1.)**2)
     disc_cost += LAMBDA*gradient_penalty
 
     loss_sum_gp = tf.summary.scalar("D_loss_gp", disc_cost)
 
-    merged_summary_op_d = tf.summary.merge([loss_sum, loss_sum_gp]) # D_prob_sum, D_pro_sum_interpolated])
-    merged_summary_op_g = tf.summary.merge([G_loss_sum, G_image]) # G_prob_sum
+    merged_summary_op_d = tf.summary.merge([loss_sum, loss_sum_gp]) 
+    merged_summary_op_g = tf.summary.merge([G_loss_sum, G_image])
 else:
     # Standard VAE loss
     ## reconstruction loss: pixel-wise L2 loss = mean(square(gen_image - real_im)) # E[log P(X|z)]
     img_loss = tf.reduce_sum(tf.squared_difference(fake_data, real_data), 1)   # axis=[1,2,3]  # has to be sum, not mean!
     mean_img_loss = tf.reduce_mean(img_loss)
-    ## latent loss = KL(latent code, unit gaussian) # D_KL(Q(z|X) || P(z|X)); calculate in closed form as both dist. are Gaussian
-    #latent_loss = 0.5 * tf.reduce_mean(tf.square(mean_data) + tf.square(variance_data) - tf.log(tf.square(variance_data)) - 1, 1)  
-    latent_loss = -0.5 * tf.reduce_mean(1. + variance_data - tf.square(mean_data) - tf.exp(variance_data), 1) # log_sigma inst of var_data, negative # better mean than sum
+    ## latent loss = KL(latent code, unit gaussian) # D_KL(Q(z|X) || P(z|X)); calculate in closed form as both dist. are Gaussian 
+    latent_loss = -0.5 * tf.reduce_mean(1. + variance_data - tf.square(mean_data) - tf.exp(variance_data), 1)
     mean_latent_loss = tf.reduce_mean(latent_loss)
-    vae_loss = tf.reduce_mean(img_loss + latent_loss)  # GAMMA
+    vae_loss = tf.reduce_mean(img_loss + latent_loss)
     img_loss_sum = tf.summary.scalar("img_loss", mean_img_loss)
     latent_loss_sum = tf.summary.scalar("latent_loss", mean_latent_loss)
     vae_loss_sum = tf.summary.scalar("VAE_loss", vae_loss)
@@ -457,17 +440,3 @@ avg_time_per_iteration = overall_time/ITERS
 print('average time per iteration: ', avg_time_per_iteration, 'sec')
 overall_time /= 60.
 print("From ", START_ITER, "to ", ITERS," the GAN took ", overall_time, "min to run")
-
-
-# ----------------- test: generate from saved model --------------------------------------------------------------
-def test():
-    with tf.Session() as sess:
-        sess.run(init_op)
-        saver.restore(sess, restore_path)
-        print("Model restored.")
-        plotter.restore(START_ITER)  # makes plots start from 0
-        generate_image(iteration, True)
-        # output = sess.run(fake_data, feed_dict={condition_data: fixed_labels_array})
-        # imsaver.save_images(output.reshape((BATCH_SIZE, IM_DIM, IM_DIM)), 'test_samples_{}.jpg'.format(frame))   # sample_dir
-        print("Test finish!")
-
