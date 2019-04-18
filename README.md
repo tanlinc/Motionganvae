@@ -6,6 +6,8 @@ This is the code to the master thesis 'Motion Prediction with the Improved Wasse
 
 GAN_mnist_allinone
 
+The different models can be chosen in the code: GAN, cGAN, VAE, EncGAN
+
 ## There are multiple files for experiments on moving MNIST dataset:
 
 GAN_movingmnist_allinone  -- without time convolution, with 64x64 image resolution for GAN and cGAN
@@ -19,3 +21,6 @@ GAN_movingmnist_allinone_time  -- for the time convolution V1 experiments with d
 GAN_movingmnist_allinone_convtime_v2  -- for the time convolution V2 experiments with 3 past frames
 
 GAN_movingmnist_allinone_convtime_v3  -- for the time convolution V3 experiments with 3 past frames
+
+
+The functions for loading the MNIST and moving MNIST dataset as well as functions for plotting and saving images can be found in the tflib folder.
