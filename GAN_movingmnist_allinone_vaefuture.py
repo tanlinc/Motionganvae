@@ -19,8 +19,8 @@ import tensorflow.contrib.layers as lays
 
 
 # --- parameter ------------------------------------------------------------------------------
-EXPERIMENT = "enc_convtime_1"  # path to results folder to save/restore
-MODE = 'enc' # choose between 'plain', 'cond', 'enc', 'vae'
+EXPERIMENT = "vae_future"  # path to results folder to save/restore
+MODE = 'vae' # choose between 'plain', 'cond', 'enc', 'vae'
 #'cond' includes conditional input (labels) to G and D [conditional GAN], output input ims compared to generated
 # 'enc' includes Encoder before G (with mean&var sampling) as well as conditional input(labels) to D
 # 'vae' comprises Encoder and Generator (with mean&var sampling), but no Discriminator
@@ -36,7 +36,7 @@ Z_DIM = 60 # for enc/vae: output dim of Encoder, input dim for Generator
 LAMBDA = 10 # wgan-gp: Gradient penalty lambda hyperparameter
 DISC_ITERS = 5 # wgan-gp: How many discriminator iterations per generator iteration
 ITERS = 10000 # How many generator iterations to train for
-START_ITER = 0  # Default 0 (start new learning), set accordingly if restoring from checkpoint (100, 200, ...)
+START_ITER = 5000  # Default 0 (start new learning), set accordingly if restoring from checkpoint (100, 200, ...)
 
 restore_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/results/" + EXPERIMENT + "/model.ckpt" # desktop path
 # samples_path = "/home/linkermann/Desktop/MA/opticalFlow/opticalFlowGAN/" + EXPERIMENT + "/samples/" # desktop path
@@ -200,7 +200,8 @@ elif(MODE == 'cond'):
     disc_real = Discriminator(real_data, conditions=condition_data)
     disc_fake = Discriminator(fake_data, conditions=condition_data)
 elif(MODE == 'vae'):
-    mean_data, variance_data = Encoder(real_data)
+    condition_data = tf.placeholder(tf.float32, shape=[BATCH_SIZE, output_dim]) # last frame for comparison
+    mean_data, variance_data = Encoder(condition_data)
     fake_data = Generator_32(BATCH_SIZE, mean=mean_data, variance=variance_data)
 else:  # plain
     fake_data = Generator(BATCH_SIZE)
@@ -244,7 +245,7 @@ if(MODE != 'vae'):
 else:
     # Standard VAE loss
     ## reconstruction loss: pixel-wise L2 loss = mean(square(gen_image - real_im)) # E[log P(X|z)]
-    img_loss = tf.reduce_sum(tf.squared_difference(fake_data, real_data), 1)   # axis=[1,2,3]  # has to be sum, not mean!
+    img_loss = tf.reduce_sum(tf.squared_difference(fake_data, real_data), 1)   # axis=[1,2,3]  # has to be sum, not mean! # change here for future: real_data, for gt: condition_data
     mean_img_loss = tf.reduce_mean(img_loss)
     ## latent loss = KL(latent code, unit gaussian) # D_KL(Q(z|X) || P(z|X)); calculate in closed form as both dist. are Gaussian
     #latent_loss = 0.5 * tf.reduce_mean(tf.square(mean_data) + tf.square(variance_data) - tf.log(tf.square(variance_data)) - 1, 1)  
@@ -286,8 +287,8 @@ test_generator = test_gen()		# init iterator for test set
 
 # --------------------------------- testing: generate samples -----------------------------------------------
 fixed_data = next(test_generator) # [0,1] # (50, 3, 4096)
-fixed_real_data = (fixed_data[:, 5, :]).reshape((BATCH_SIZE, output_dim)) # current frame # (50, 4096)
-fixed_cond_data = (fixed_data[:, 4, :]).reshape((BATCH_SIZE, output_dim)) # only 1 last frame for now # (50, 4096)
+fixed_real_data = (fixed_data[:, 1, :]).reshape((BATCH_SIZE, output_dim)) # current frame # (50, 4096)
+fixed_cond_data = (fixed_data[:, 0, :]).reshape((BATCH_SIZE, output_dim)) # only 1 last frame for now # (50, 4096)
 fixed_real_data_255 = ((fixed_real_data)*255.).astype('uint8') # [0,255] 
 fixed_cond_data_255 = ((fixed_cond_data)*255.).astype('uint8') # [0,255]
 fixed_real_data_gt = np.copy(fixed_real_data_255)
@@ -316,8 +317,8 @@ def generate_image(frame, final): # generates a batch of samples next to each ot
     elif(MODE == 'plain'):
         samples = session.run(fixed_noise_samples) # [0,1]
     elif(MODE == 'vae'):
-        samples = session.run(fixed_noise_samples, feed_dict={real_data: fixed_cond_data}) # [0,1]
-        samples_noise = session.run(_noise_samples, feed_dict={real_data: fixed_cond_data}) # [0,1]
+        samples = session.run(fixed_noise_samples, feed_dict={condition_data: fixed_cond_data}) # [0,1]
+        samples_noise = session.run(_noise_samples) #, feed_dict={condition_data: fixed_cond_data}) # [0,1]
         noise_samples_255 = ((samples_noise)*255.).astype('uint8') # [0, 1] -> [0,255] 
     inference_end_time = time.time()  # inference time analysis
     inference_time = (inference_end_time - inference_start_time)
@@ -328,11 +329,11 @@ def generate_image(frame, final): # generates a batch of samples next to each ot
 
     if(MODE == 'plain'):
         imsaver.save_images(samples_255.reshape((BATCH_SIZE, IM_DIM, IM_DIM)), 'samples_{}.jpg'.format(frame), alternate_viz=True)  
-    elif(MODE == 'vae'):
-        for i in range(0, BATCH_SIZE):
-            samples_255 = np.insert(samples_255, i*2, fixed_cond_data_255[i,:], axis=0) # real (cond digit) next to sample
-        imsaver.save_images(samples_255.reshape((2*BATCH_SIZE, IM_DIM, IM_DIM)), 'samples_{}.jpg'.format(frame), alternate_viz=True, conds=True)  
-        imsaver.save_images(noise_samples_255.reshape((BATCH_SIZE, IM_DIM, IM_DIM)), 'noise_samples_{}.jpg'.format(frame), alternate_viz=True)  
+    #elif(MODE == 'vae'):
+    #    for i in range(0, BATCH_SIZE):
+    #        samples_255 = np.insert(samples_255, i*2, fixed_cond_data_255[i,:], axis=0) # real (cond digit) next to sample
+    #    imsaver.save_images(samples_255.reshape((2*BATCH_SIZE, IM_DIM, IM_DIM)), 'samples_{}.jpg'.format(frame), alternate_viz=True, conds=True)  
+    #    imsaver.save_images(noise_samples_255.reshape((BATCH_SIZE, IM_DIM, IM_DIM)), 'noise_samples_{}.jpg'.format(frame), alternate_viz=True)  
     else: # if(MODE == 'enc' or MODE == 'cond') add ground truth
         for i in range(0, BATCH_SIZE):
             samples_255 = np.insert(samples_255, i*3, fixed_cond_data_255[i,:], axis=0) # cond left of sample
@@ -341,7 +342,7 @@ def generate_image(frame, final): # generates a batch of samples next to each ot
 
         print("Iteration %d :" % frame)
         # compare generated to real one
-        real = tf.reshape(fixed_cond_data, [BATCH_SIZE,IM_DIM,IM_DIM,1])
+        real = tf.reshape(fixed_real_data, [BATCH_SIZE,IM_DIM,IM_DIM,1])
         pred = tf.reshape(samples, [BATCH_SIZE,IM_DIM,IM_DIM,1])
         ssim_vals = tf.image.ssim(real, pred, max_val=1.0) # on batch
         mse_vals = tf.reduce_mean(tf.keras.metrics.mse(real, pred), [1,2]) # mse on grayscale, on [0,1]
@@ -389,14 +390,14 @@ with tf.Session(config=config) as session:
         # Train generator (and Encoder)
         if (iteration > 0):
             _data = next(gen) # [0,1]
-            _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-            _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+            _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+            _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
             if(MODE == 'enc'):
                 _, summary_str = session.run([gen_train_op, merged_summary_op_g], feed_dict={real_data: _real_data, condition_data: _cond_data})
             elif(MODE == 'cond'):
                 _, summary_str = session.run([gen_train_op, merged_summary_op_g], feed_dict={condition_data: _cond_data})
             elif(MODE == 'vae'):
-                _, summary_str = session.run([train_op, merged_summary_op_vae], feed_dict={real_data: _cond_data})
+                _, summary_str = session.run([train_op, merged_summary_op_vae], feed_dict={real_data: _real_data, condition_data: _cond_data})
             else:
                 _, summary_str = session.run([gen_train_op, merged_summary_op_g])
             summary_writer.add_summary(summary_str, iteration)
@@ -404,8 +405,8 @@ with tf.Session(config=config) as session:
             # Train discriminator
             for i in range(DISC_ITERS):
                 _data = next(gen) # [0,1]
-                _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-                _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+                _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+                _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
                 if(MODE == 'plain'): 
                     _disc_cost, _, summary_str = session.run([disc_cost, disc_train_op, merged_summary_op_d], feed_dict={real_data: _real_data})
                 else:
@@ -420,15 +421,15 @@ with tf.Session(config=config) as session:
             dev_disc_costs = []
             dev_vae_losses = []
             _data = next(dev_generator) # [0,1]
-            _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-            _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+            _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+            _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
             if(MODE == 'plain'): 
                 _dev_disc_cost, _dev_gen_cost = session.run([disc_cost, gen_cost], feed_dict={real_data: _real_data})
                 print("Step %d: D: loss = %.7f G: loss=%.7f " % (iteration, _dev_disc_cost, _dev_gen_cost))
                 dev_disc_costs.append(_dev_disc_cost)
                 plotter.plot('dev disc cost', np.mean(dev_disc_costs))
             elif(MODE == 'vae'): 
-                _dev_vae_loss = session.run(vae_loss, feed_dict={real_data: _cond_data})
+                _dev_vae_loss = session.run(vae_loss, feed_dict={real_data: _real_data, condition_data: _cond_data})
                 print("Step %d: total VAE loss = %.7f" % (iteration, _dev_vae_loss))
                 dev_vae_losses.append(_dev_vae_loss)
                 plotter.plot('vae loss', np.mean(dev_vae_losses))           

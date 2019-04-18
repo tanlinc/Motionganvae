@@ -19,8 +19,8 @@ import tensorflow.contrib.layers as lays
 
 
 # --- parameter ------------------------------------------------------------------------------
-EXPERIMENT = "enc_convtime_1"  # path to results folder to save/restore
-MODE = 'enc' # choose between 'plain', 'cond', 'enc', 'vae'
+EXPERIMENT = "cgan_32"  # path to results folder to save/restore
+MODE = 'cond' # choose between 'plain', 'cond', 'enc', 'vae'
 #'cond' includes conditional input (labels) to G and D [conditional GAN], output input ims compared to generated
 # 'enc' includes Encoder before G (with mean&var sampling) as well as conditional input(labels) to D
 # 'vae' comprises Encoder and Generator (with mean&var sampling), but no Discriminator
@@ -87,41 +87,45 @@ def sample_z(shape, mean, variance):
     noise = tf.random_normal(shape, mean=0., stddev=1.) # sample from N(0,1)
     return (noise * variance) + mean  # change scale & location  
 
-def Generator(n_samples, conditions=None, mean=None, variance=None, noise=None):  
-    if (MODE == 'cond'):       # input: last frame 
-        if noise is None:          # sample from Gaussian        
-            noise = tf.random_normal([BATCH_SIZE, NOISE_DIM], mean= 0.0, stddev = 1.0)
+#def Generator(n_samples, conditions=None, mean=None, variance=None, noise=None):  
+#    if (MODE == 'cond'):       # input: last frame 
+#        if noise is None:          # sample from Gaussian        
+#            noise = tf.random_normal([BATCH_SIZE, NOISE_DIM], mean= 0.0, stddev = 1.0)
         #noise = tf.reshape(noise, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-        #frames = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-        inputs = tf.concat([noise, conditions], 1) # to: (BATCH_SIZE, 60 + 64*64) 
-        #inputs = tf.reshape(inputs, [BATCH_SIZE, 2*output_dim])
-    else: # plain
-        if noise is None:
-            noise = tf.random_normal([n_samples, NOISE_DIM], mean= 0.0, stddev = 1.0) 
-        inputs = noise       # (BATCH_SIZE, NOISE_DIM) 
-    out = lays.fully_connected(inputs, 4*4*8*DIM, reuse = tf.AUTO_REUSE, # expansion
-        weights_initializer=tf.initializers.glorot_uniform(), scope = 'Gen.Input')
-    out = tf.reshape(out, [-1, 8*DIM, 4, 4])  
-    out = tf.transpose(out, [0,2,3,1], name='NCHW_to_NHWC')
-    out = lays.conv2d_transpose(out, 4*DIM, kernel_size=5, stride=2, scope='Gen.1',
-        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
-    out = lays.conv2d_transpose(out, 2*DIM, kernel_size=5, stride=2, scope='Gen.2',
-        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
-    out = lays.conv2d_transpose(out, DIM, kernel_size=5, stride=2, scope='Gen.3',  # new layer
-        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
-    out = lays.conv2d_transpose(out, 1, kernel_size=5, stride=2, scope='Gen.4',
-        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE,
-        activation_fn=tf.nn.sigmoid) # sigmoid to get values between (0,1)
-    out = tf.transpose(out, [0,3,1,2], name='NHWC_to_NCHW')
-    return tf.reshape(out, [BATCH_SIZE, output_dim])
-
+#        #frames = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) #
+#        inputs = tf.concat([noise, conditions], 1) # to: (BATCH_SIZE, 60 + #64*64) 
+#        #inputs = tf.reshape(inputs, [BATCH_SIZE, 2*output_dim])
+#    else: # plain
+#        if noise is None:
+#            noise = tf.random_normal([n_samples, NOISE_DIM], mean= 0.0, stddev = 1.0) 
+#        inputs = noise       # (BATCH_SIZE, NOISE_DIM) 
+#    out = lays.fully_connected(inputs, 4*4*8*DIM, reuse = tf.AUTO_REUSE, # expansion
+#        weights_initializer=tf.initializers.glorot_uniform(), scope = 'Gen.Input')
+#    out = tf.reshape(out, [-1, 8*DIM, 4, 4])  
+#    out = tf.transpose(out, [0,2,3,1], name='NCHW_to_NHWC')
+#    out = lays.conv2d_transpose(out, 4*DIM, kernel_size=5, stride=2, scope='Gen.1',
+#        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
+#    out = lays.conv2d_transpose(out, 2*DIM, kernel_size=5, stride=2, scope='Gen.2',
+#        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
+#    out = lays.conv2d_transpose(out, DIM, kernel_size=5, stride=2, scope='Gen.3',  # new layer
+#        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE, activation_fn=tf.nn.leaky_relu)
+#    out = lays.conv2d_transpose(out, 1, kernel_size=5, stride=2, scope='Gen.4',
+#        weights_initializer=tf.initializers.he_uniform(), reuse=tf.AUTO_REUSE,
+#        activation_fn=tf.nn.sigmoid) # sigmoid to get values between (0,1)
+#    out = tf.transpose(out, [0,3,1,2], name='NHWC_to_NCHW')
+#    return tf.reshape(out, [BATCH_SIZE, output_dim])
 
 def Generator_32(n_samples, conditions=None, mean=None, variance=None, noise=None):  
     # (MODE == 'enc' or MODE == 'vae'):          # input: mean and var
-    if(mean != None and variance != None):
-        inputs = sample_z([n_samples, Z_DIM], mean, variance)
-    else:
+    if noise is None: # sample from Gaussian 
+        noise = tf.random_normal([n_samples, NOISE_DIM], mean= 0.0, stddev = 1.0) 
+    if (MODE == 'cond'):       # input: last frame 
+        inputs = tf.concat([noise, conditions], 1) # to: (BATCH_SIZE, 60 + 32*32) 
+    elif (MODE == 'plain'):
         inputs = noise
+    else:
+        if(mean != None and variance != None):
+            inputs = sample_z([n_samples, Z_DIM], mean, variance)
     out = lays.fully_connected(inputs, 4*4*4*DIM, reuse = tf.AUTO_REUSE, # expansion
         weights_initializer=tf.initializers.glorot_uniform(), scope = 'Gen.Input')
     out = tf.reshape(out, [-1, 4*DIM, 4, 4])  
@@ -136,35 +140,37 @@ def Generator_32(n_samples, conditions=None, mean=None, variance=None, noise=Non
     out = tf.transpose(out, [0,3,1,2], name='NHWC_to_NCHW')
     return tf.reshape(out, [BATCH_SIZE, output_dim])
 
-def Discriminator(inputs, conditions=None):
-    if (MODE == 'plain'):               # inputs: [BATCH_SIZE, output_dim]
+#def Discriminator(inputs, conditions=None):
+#    if (MODE == 'plain'):               # inputs: [BATCH_SIZE, output_dim]
+#        ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
+#    else:                               # input: last frame [BATCH_SIZE, output_dim] 
+#        ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
+#        conds = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
+#        ins = tf.concat([ins, conds], 1) # to: (BATCH_SIZE, 2, IM_DIM, IM_DIM) 
+#    out = lays.conv2d(ins, DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
+#        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
+#        weights_initializer=tf.initializers.he_uniform(), scope='Disc.1')
+#    out = lays.conv2d(out, 2*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
+#        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
+#        weights_initializer=tf.initializers.he_uniform(), scope='Disc.2')
+#    out = lays.conv2d(out, 4*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
+#        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
+#        weights_initializer=tf.initializers.he_uniform(), scope='Disc.3')
+#    out = lays.conv2d(out, 8*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
+#        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
+#        weights_initializer=tf.initializers.he_uniform(), scope='Disc.4')  # new layer 8*DIM
+#    out = tf.reshape(out, [-1, 4*4*8*DIM]) # adjust   
+#    out = lays.fully_connected(out, 1, activation_fn=None, reuse = tf.AUTO_REUSE,   # to single value
+#        weights_initializer=tf.initializers.glorot_uniform(), scope = 'Disc.Out')
+#    return tf.reshape(out, [-1])
+
+def Discriminator_32(inputs, conditions=None):
+    if(MODE == 'plain'):               # inputs: [BATCH_SIZE, output_dim]
         ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-    else:                               # input: last frame [BATCH_SIZE, output_dim] 
+    elif(MODE == 'cond' or MODE == 'enc'):              # input: last frame [BATCH_SIZE, output_dim] 
         ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
         conds = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
         ins = tf.concat([ins, conds], 1) # to: (BATCH_SIZE, 2, IM_DIM, IM_DIM) 
-    out = lays.conv2d(ins, DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
-        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
-        weights_initializer=tf.initializers.he_uniform(), scope='Disc.1')
-    out = lays.conv2d(out, 2*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
-        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
-        weights_initializer=tf.initializers.he_uniform(), scope='Disc.2')
-    out = lays.conv2d(out, 4*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
-        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
-        weights_initializer=tf.initializers.he_uniform(), scope='Disc.3')
-    out = lays.conv2d(out, 8*DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
-        data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
-        weights_initializer=tf.initializers.he_uniform(), scope='Disc.4')  # new layer 8*DIM
-    out = tf.reshape(out, [-1, 4*4*8*DIM]) # adjust   
-    out = lays.fully_connected(out, 1, activation_fn=None, reuse = tf.AUTO_REUSE,   # to single value
-        weights_initializer=tf.initializers.glorot_uniform(), scope = 'Disc.Out')
-    return tf.reshape(out, [-1])
-
-def Discriminator_32(inputs, conditions=None):
-    # aae: input: last frame [BATCH_SIZE, output_dim] 
-    ins = tf.reshape(inputs, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-    conds = tf.reshape(conditions, [BATCH_SIZE, 1, IM_DIM, IM_DIM]) 
-    ins = tf.concat([ins, conds], 1) # to: (BATCH_SIZE, 2, IM_DIM, IM_DIM) 
     out = lays.conv2d(ins, DIM, kernel_size=5, stride=2, reuse=tf.AUTO_REUSE,
         data_format='NCHW', activation_fn=tf.nn.leaky_relu, 
         weights_initializer=tf.initializers.he_uniform(), scope='Disc.1')
@@ -196,16 +202,16 @@ if(MODE == 'enc'):
     disc_fake = Discriminator_32(fake_data, conditions=condition_data)
 elif(MODE == 'cond'):
     condition_data = tf.placeholder(tf.float32, shape=[BATCH_SIZE, output_dim]) # last frame for G and D
-    fake_data = Generator(BATCH_SIZE, conditions=condition_data)
-    disc_real = Discriminator(real_data, conditions=condition_data)
-    disc_fake = Discriminator(fake_data, conditions=condition_data)
+    fake_data = Generator_32(BATCH_SIZE, conditions=condition_data)
+    disc_real = Discriminator_32(real_data, conditions=condition_data)
+    disc_fake = Discriminator_32(fake_data, conditions=condition_data)
 elif(MODE == 'vae'):
     mean_data, variance_data = Encoder(real_data)
     fake_data = Generator_32(BATCH_SIZE, mean=mean_data, variance=variance_data)
 else:  # plain
-    fake_data = Generator(BATCH_SIZE)
-    disc_real = Discriminator(real_data)
-    disc_fake = Discriminator(fake_data)
+    fake_data = Generator_32(BATCH_SIZE)
+    disc_real = Discriminator_32(real_data)
+    disc_fake = Discriminator_32(fake_data)
 
 fake_image = tf.reshape(fake_data, [BATCH_SIZE, IM_DIM, IM_DIM, 1])
 G_image = tf.summary.image("G_out", fake_image)
@@ -227,11 +233,9 @@ if(MODE != 'vae'):
     alpha = tf.random_uniform(shape=[BATCH_SIZE,1], minval=0., maxval=1.)
     interpolates = real_data + (alpha*(fake_data - real_data))
     if(MODE == 'plain'):
-        gradients = tf.gradients(Discriminator(interpolates), [interpolates])[0] 
-    elif(MODE == 'enc'):
-        gradients = tf.gradients(Discriminator_32(interpolates, conditions=condition_data), [interpolates])[0]
+        gradients = tf.gradients(Discriminator_32(interpolates), [interpolates])[0] 
     else:
-        gradients = tf.gradients(Discriminator(interpolates, conditions=condition_data), [interpolates])[0]
+        gradients = tf.gradients(Discriminator_32(interpolates, conditions=condition_data), [interpolates])[0]
         #D_prob_sum_ip = tf.summary.histogram("D_prob_ip", gradients) # do in steps, its not gradients
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
     gradient_penalty = tf.reduce_mean((slopes-1.)**2)
@@ -286,8 +290,8 @@ test_generator = test_gen()		# init iterator for test set
 
 # --------------------------------- testing: generate samples -----------------------------------------------
 fixed_data = next(test_generator) # [0,1] # (50, 3, 4096)
-fixed_real_data = (fixed_data[:, 5, :]).reshape((BATCH_SIZE, output_dim)) # current frame # (50, 4096)
-fixed_cond_data = (fixed_data[:, 4, :]).reshape((BATCH_SIZE, output_dim)) # only 1 last frame for now # (50, 4096)
+fixed_real_data = (fixed_data[:, 1, :]).reshape((BATCH_SIZE, output_dim)) # current frame # (50, 4096)
+fixed_cond_data = (fixed_data[:, 0, :]).reshape((BATCH_SIZE, output_dim)) # only 1 last frame for now # (50, 4096)
 fixed_real_data_255 = ((fixed_real_data)*255.).astype('uint8') # [0,255] 
 fixed_cond_data_255 = ((fixed_cond_data)*255.).astype('uint8') # [0,255]
 fixed_real_data_gt = np.copy(fixed_real_data_255)
@@ -305,9 +309,9 @@ if(MODE == 'enc' or MODE == 'vae'):
     fixed_noise_samples = Generator_32(BATCH_SIZE, mean=fixed_mean, variance=fixed_variance)
     _noise_samples = Generator_32(BATCH_SIZE, noise=fixed_noise)
 elif(MODE == 'cond'):
-    fixed_noise_samples = Generator(BATCH_SIZE, conditions=fixed_cond_data, noise=fixed_noise)
+    fixed_noise_samples = Generator_32(BATCH_SIZE, conditions=fixed_cond_data, noise=fixed_noise)
 elif(MODE == 'plain'):
-    fixed_noise_samples = Generator(BATCH_SIZE, noise=fixed_noise)
+    fixed_noise_samples = Generator_32(BATCH_SIZE, noise=fixed_noise)
 
 def generate_image(frame, final): # generates a batch of samples next to each other in one image!
     inference_start_time = time.time()  # inference time analysis
@@ -389,8 +393,8 @@ with tf.Session(config=config) as session:
         # Train generator (and Encoder)
         if (iteration > 0):
             _data = next(gen) # [0,1]
-            _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-            _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+            _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+            _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
             if(MODE == 'enc'):
                 _, summary_str = session.run([gen_train_op, merged_summary_op_g], feed_dict={real_data: _real_data, condition_data: _cond_data})
             elif(MODE == 'cond'):
@@ -404,8 +408,8 @@ with tf.Session(config=config) as session:
             # Train discriminator
             for i in range(DISC_ITERS):
                 _data = next(gen) # [0,1]
-                _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-                _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+                _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+                _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
                 if(MODE == 'plain'): 
                     _disc_cost, _, summary_str = session.run([disc_cost, disc_train_op, merged_summary_op_d], feed_dict={real_data: _real_data})
                 else:
@@ -420,8 +424,8 @@ with tf.Session(config=config) as session:
             dev_disc_costs = []
             dev_vae_losses = []
             _data = next(dev_generator) # [0,1]
-            _real_data = (_data[:,5,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
-            _cond_data = (_data[:,4,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
+            _real_data = (_data[:,1,:]).reshape((BATCH_SIZE, output_dim))  # current frame for now
+            _cond_data = (_data[:,0,:]).reshape((BATCH_SIZE, output_dim))  # one last frame for now
             if(MODE == 'plain'): 
                 _dev_disc_cost, _dev_gen_cost = session.run([disc_cost, gen_cost], feed_dict={real_data: _real_data})
                 print("Step %d: D: loss = %.7f G: loss=%.7f " % (iteration, _dev_disc_cost, _dev_gen_cost))
